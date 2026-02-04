@@ -69,7 +69,7 @@ async function convertImage(imageBuffer, theme, photoName, index) {
     console.log(`  Converting to ${theme.name} style...`)
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp-image-generation',
+      model: 'gemini-3-pro-image-preview',
       generationConfig: {
         responseModalities: ['Text', 'Image']
       }

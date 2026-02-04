@@ -5,9 +5,14 @@ import archiver from 'archiver'
 
 const router = express.Router()
 
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY)
-  : null
+// Lazy initialize Stripe
+let stripe = null
+function getStripe() {
+  if (stripe === null && process.env.STRIPE_SECRET_KEY) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+  }
+  return stripe
+}
 
 const checkoutSessions = new Map()
 
@@ -20,7 +25,7 @@ router.post('/create-checkout', async (req, res) => {
     const { imageId, imageIds, bundle } = req.body
 
     // Handle both single image and bundle
-    const ids = bundle && imageIds ? imageIds : (imageId ? [imageId] : [])
+    const ids = imageIds?.length ? imageIds : (imageId ? [imageId] : [])
 
     if (ids.length === 0) {
       return res.status(400).json({ error: 'Image ID(s) required' })
@@ -35,7 +40,7 @@ router.post('/create-checkout', async (req, res) => {
     }
 
     // Mock checkout for testing without Stripe
-    if (!stripe) {
+    if (!getStripe()) {
       console.log('Stripe not configured - returning mock checkout URL')
       const mockSessionId = `mock_${Date.now()}_bundle`
       checkoutSessions.set(mockSessionId, { imageIds: ids, paid: true })
@@ -47,25 +52,20 @@ router.post('/create-checkout', async (req, res) => {
       })
     }
 
-    const isBundle = ids.length > 1
-    const productName = isBundle
-      ? "Valentine's Portrait Bundle - 6 Styles"
-      : "Valentine's Portrait - HD Download"
+    const productName = "imagegen.studio Valentine's Day Special Portrait"
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card', 'link'],
+    const session = await getStripe().checkout.sessions.create({
+      payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
             currency: 'usd',
             product_data: {
               name: productName,
-              description: isBundle
-                ? 'All 6 artistic styles: Renaissance, Cartoon, Watercolor, Pop Art, Romantic, Fantasy'
-                : 'High-resolution AI-generated portrait',
+              description: '4K Oil Painting Portrait (2160x3840) - Instant Download',
               images: []
             },
-            unit_amount: 2500 // $25.00
+            unit_amount: 999 // $9.99
           },
           quantity: 1
         }
@@ -81,7 +81,7 @@ router.post('/create-checkout', async (req, res) => {
       },
       custom_text: {
         submit: {
-          message: 'Your HD portraits will be available for instant download after payment. 100% satisfaction guaranteed!'
+          message: 'Your 4K portrait will be available for instant download after payment. Contact: imagegen.studio.help@gmail.com'
         }
       },
       allow_promotion_codes: true
@@ -114,11 +114,11 @@ router.get('/download/:sessionId', async (req, res) => {
       imageIds = sessionData.imageIds
     } else {
       // Verify Stripe session
-      if (!stripe) {
+      if (!getStripe()) {
         return res.status(500).json({ error: 'Payment system not configured' })
       }
 
-      const session = await stripe.checkout.sessions.retrieve(sessionId)
+      const session = await getStripe().checkout.sessions.retrieve(sessionId)
 
       if (session.payment_status !== 'paid') {
         return res.status(402).json({ error: 'Payment not completed' })
@@ -136,7 +136,6 @@ router.get('/download/:sessionId', async (req, res) => {
       vangogh: 'VanGogh',
       ghibli: 'StudioGhibli',
       disney: 'DisneyPixar',
-      anime: 'Anime',
       watercolor: 'Watercolor'
     }
 
@@ -196,7 +195,7 @@ router.get('/download/:sessionId', async (req, res) => {
  * Stripe webhook for payment events
  */
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  if (!stripe) {
+  if (!getStripe()) {
     return res.status(500).json({ error: 'Stripe not configured' })
   }
 
@@ -210,7 +209,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   let event
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret)
+    event = getStripe().webhooks.constructEvent(req.body, sig, webhookSecret)
   } catch (err) {
     console.error('Webhook signature verification failed:', err.message)
     return res.status(400).send(`Webhook Error: ${err.message}`)

@@ -42,7 +42,7 @@ async function generateImage(prompt, index) {
     console.log(`Generating image ${index + 1}/20: ${prompt.substring(0, 50)}...`)
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp-image-generation',
+      model: 'gemini-3-pro-image-preview',
       generationConfig: {
         responseModalities: ['Text', 'Image']
       }

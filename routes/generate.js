@@ -24,25 +24,36 @@ const upload = multer({
  * Upload an image and generate a styled portrait
  */
 router.post('/generate', upload.single('image'), async (req, res) => {
+  console.log('=== /api/generate called ===')
+  console.log('Request body:', req.body)
+  console.log('File received:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'NO FILE')
+
   try {
     if (!req.file) {
+      console.log('ERROR: No image file provided')
       return res.status(400).json({ error: 'No image file provided' })
     }
 
     const theme = req.body.theme
+    console.log('Theme requested:', theme)
+
     if (!theme) {
+      console.log('ERROR: No theme selected')
       return res.status(400).json({ error: 'No theme selected' })
     }
 
-    const validThemes = ['renaissance', 'vangogh', 'ghibli', 'disney', 'anime', 'watercolor']
+    const validThemes = ['renaissance', 'vangogh', 'ghibli', 'disney', 'watercolor']
     if (!validThemes.includes(theme)) {
+      console.log('ERROR: Invalid theme:', theme)
       return res.status(400).json({ error: 'Invalid theme' })
     }
 
-    console.log(`Generating ${theme} portrait...`)
+    console.log(`Starting generation for ${theme}...`)
 
     // Generate the portrait
     const result = await generatePortrait(req.file.buffer, theme)
+
+    console.log('Generation result:', result)
 
     // Store metadata for later retrieval
     storeImageMetadata(result.imageId, {
@@ -52,6 +63,8 @@ router.post('/generate', upload.single('image'), async (req, res) => {
       imageUrl: result.imageUrl
     })
 
+    console.log('Sending response with imageUrl:', result.imageUrl)
+
     res.json({
       success: true,
       imageId: result.imageId,
@@ -59,8 +72,10 @@ router.post('/generate', upload.single('image'), async (req, res) => {
       theme
     })
   } catch (error) {
-    console.error('Generation error:', error)
-    res.status(500).json({ error: 'Failed to generate portrait' })
+    console.error('=== GENERATION ERROR ===')
+    console.error('Error message:', error.message)
+    console.error('Error stack:', error.stack)
+    res.status(500).json({ error: 'Failed to generate portrait', details: error.message })
   }
 })
 

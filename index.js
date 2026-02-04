@@ -39,6 +39,15 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// Serve static files from client build
+const clientDistPath = join(__dirname, '../client/dist')
+app.use(express.static(clientDistPath))
+
+// SPA fallback - serve index.html for all non-API routes
+app.get('*', (req, res) => {
+  res.sendFile(join(clientDistPath, 'index.html'))
+})
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
