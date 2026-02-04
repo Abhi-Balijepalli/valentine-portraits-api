@@ -52,7 +52,7 @@ router.post('/create-checkout', async (req, res) => {
       })
     }
 
-    const productName = "imagegen.studio Valentine's Day Special Portrait"
+    const productName = "imagegen.studio Valentine's Day 3-Pack Portraits"
 
     const session = await getStripe().checkout.sessions.create({
       payment_method_types: ['card'],
@@ -62,10 +62,10 @@ router.post('/create-checkout', async (req, res) => {
             currency: 'usd',
             product_data: {
               name: productName,
-              description: '4K Oil Painting Portrait (2160x3840) - Instant Download',
+              description: '3 Unique 4K AI Art Portraits (2160x3840) - Oil Painting, Studio Ghibli, Renaissance',
               images: []
             },
-            unit_amount: 999 // $9.99
+            unit_amount: 899 // $8.99
           },
           quantity: 1
         }
@@ -81,7 +81,7 @@ router.post('/create-checkout', async (req, res) => {
       },
       custom_text: {
         submit: {
-          message: 'Your 4K portrait will be available for instant download after payment. Contact: imagegen.studio.help@gmail.com'
+          message: 'Your 3 unique 4K portraits will be available for instant download after payment. Contact: imagegen.studio.help@gmail.com'
         }
       },
       allow_promotion_codes: true
@@ -132,6 +132,10 @@ router.get('/download/:sessionId', async (req, res) => {
     }
 
     const themeNames = {
+      'oil-painting': 'OilPainting',
+      'studio-ghibli': 'StudioGhibli',
+      'mona-lisa': 'Renaissance',
+      // Legacy theme names for backwards compatibility
       renaissance: 'Renaissance',
       vangogh: 'VanGogh',
       ghibli: 'StudioGhibli',
@@ -166,17 +170,18 @@ router.get('/download/:sessionId', async (req, res) => {
     // Multiple images - create ZIP
     res.set({
       'Content-Type': 'application/zip',
-      'Content-Disposition': 'attachment; filename="valentine-portraits.zip"'
+      'Content-Disposition': 'attachment; filename="Valentines imagegen.studio.zip"'
     })
 
     const archive = archiver('zip', { zlib: { level: 5 } })
     archive.pipe(res)
 
+    const folderName = 'Valentines imagegen.studio'
     for (const id of imageIds) {
       try {
         const { buffer, theme } = await fetchImage(id)
         const themeName = themeNames[theme] || 'Portrait'
-        const filename = `Valentine-Portrait-${themeName}.jpg`
+        const filename = `${folderName}/Valentine-Portrait-${themeName}.jpg`
         archive.append(buffer, { name: filename })
       } catch (err) {
         console.error(`Failed to fetch image ${id}:`, err)
@@ -187,6 +192,84 @@ router.get('/download/:sessionId', async (req, res) => {
   } catch (error) {
     console.error('Download error:', error)
     res.status(500).json({ error: 'Failed to download images' })
+  }
+})
+
+const SUPABASE_PUBLIC_URL = 'https://vvftrcuiettbrcvivulv.supabase.co/storage/v1/object/public/images'
+
+/**
+ * GET /api/images/:sessionId
+ * Get image URLs for a paid session
+ */
+router.get('/images/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params
+
+    // Helper to construct image URL from imageId
+    const constructImageUrl = (imageId) => {
+      // imageId format: {uuid}_{style} e.g. "abc123_oil-painting"
+      const parts = imageId.split('_')
+      if (parts.length >= 2) {
+        const uuid = parts.slice(0, -1).join('_') // Handle UUIDs with underscores
+        const style = parts[parts.length - 1]
+        return `${SUPABASE_PUBLIC_URL}/valentines/${uuid}/${style}.jpg`
+      }
+      return null
+    }
+
+    // Helper to extract style from imageId
+    const extractStyle = (imageId) => {
+      const parts = imageId.split('_')
+      return parts[parts.length - 1]
+    }
+
+    // Handle mock sessions
+    if (sessionId.startsWith('mock_')) {
+      const sessionData = checkoutSessions.get(sessionId)
+      if (!sessionData) {
+        return res.status(404).json({ error: 'Session not found' })
+      }
+
+      const images = sessionData.imageIds.map(id => {
+        const metadata = getImageMetadata(id)
+        const style = metadata?.theme || extractStyle(id)
+        return {
+          imageId: id,
+          imageUrl: metadata?.imageUrl || constructImageUrl(id),
+          style
+        }
+      }).filter(img => img.imageUrl)
+
+      return res.json({ images })
+    }
+
+    // Verify Stripe session
+    if (!getStripe()) {
+      return res.status(500).json({ error: 'Payment system not configured' })
+    }
+
+    const session = await getStripe().checkout.sessions.retrieve(sessionId)
+
+    if (session.payment_status !== 'paid') {
+      return res.status(402).json({ error: 'Payment not completed' })
+    }
+
+    const imageIds = JSON.parse(session.metadata.imageIds || '[]')
+
+    const images = imageIds.map(id => {
+      const metadata = getImageMetadata(id)
+      const style = metadata?.theme || extractStyle(id)
+      return {
+        imageId: id,
+        imageUrl: metadata?.imageUrl || constructImageUrl(id),
+        style
+      }
+    }).filter(img => img.imageUrl)
+
+    res.json({ images })
+  } catch (error) {
+    console.error('Get images error:', error)
+    res.status(500).json({ error: 'Failed to get images' })
   }
 })
 

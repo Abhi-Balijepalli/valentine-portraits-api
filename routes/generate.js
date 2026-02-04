@@ -1,6 +1,6 @@
 import express from 'express'
 import multer from 'multer'
-import { generatePortrait, storeImageMetadata } from '../services/imageGenerator.js'
+import { generatePortraitPack, storeImageMetadata } from '../services/imageGenerator.js'
 
 const router = express.Router()
 
@@ -21,11 +21,10 @@ const upload = multer({
 
 /**
  * POST /api/generate
- * Upload an image and generate a styled portrait
+ * Upload an image and generate a 3-pack of styled portraits
  */
 router.post('/generate', upload.single('image'), async (req, res) => {
   console.log('=== /api/generate called ===')
-  console.log('Request body:', req.body)
   console.log('File received:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'NO FILE')
 
   try {
@@ -34,48 +33,36 @@ router.post('/generate', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'No image file provided' })
     }
 
-    const theme = req.body.theme
-    console.log('Theme requested:', theme)
+    console.log('Starting 3-pack portrait generation...')
 
-    if (!theme) {
-      console.log('ERROR: No theme selected')
-      return res.status(400).json({ error: 'No theme selected' })
-    }
-
-    const validThemes = ['renaissance', 'vangogh', 'ghibli', 'disney', 'watercolor']
-    if (!validThemes.includes(theme)) {
-      console.log('ERROR: Invalid theme:', theme)
-      return res.status(400).json({ error: 'Invalid theme' })
-    }
-
-    console.log(`Starting generation for ${theme}...`)
-
-    // Generate the portrait
-    const result = await generatePortrait(req.file.buffer, theme)
+    // Generate the portrait pack (3 styles)
+    const result = await generatePortraitPack(req.file.buffer)
 
     console.log('Generation result:', result)
 
-    // Store metadata for later retrieval
-    storeImageMetadata(result.imageId, {
-      theme,
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      imageUrl: result.imageUrl
-    })
+    // Store metadata for all 3 images
+    for (const img of result.images) {
+      storeImageMetadata(img.imageId, {
+        theme: img.style,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        imageUrl: img.imageUrl,
+        sessionId: result.sessionId
+      })
+    }
 
-    console.log('Sending response with imageUrl:', result.imageUrl)
+    console.log('Sending response with', result.images.length, 'images')
 
     res.json({
       success: true,
-      imageId: result.imageId,
-      imageUrl: result.imageUrl,
-      theme
+      sessionId: result.sessionId,
+      images: result.images
     })
   } catch (error) {
     console.error('=== GENERATION ERROR ===')
     console.error('Error message:', error.message)
     console.error('Error stack:', error.stack)
-    res.status(500).json({ error: 'Failed to generate portrait', details: error.message })
+    res.status(500).json({ error: 'Failed to generate portraits', details: error.message })
   }
 })
 
